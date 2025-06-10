@@ -1,316 +1,216 @@
-import sys
-import os
-import tempfile
+from nicegui import ui, app
 import numpy as np
-import pydicom
-import nibabel as nib
+import os, tempfile
+import pydicom, nibabel as nib
 from skimage.measure import marching_cubes
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QComboBox
-)
-from PyQt5.QtCore import Qt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 import vtk
-from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtk.util.numpy_support import numpy_to_vtk
+from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+import matplotlib.pyplot as plt
+import base64
+from io import BytesIO
 
-class CTSTLEditor(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("CT 2D Viewer + 3D STL Editor")
-        self.volume = None
-        self.axis = 0
-        self.window_center = 0
-        self.window_width = 1
-        self.mesh_polydata = None
-        self.original_polydata = None
-        self.clipped_polydata = None
-        self.setup_ui()
+# Global state
+volume = None
+axis = 0
+vmin, vmax = 0, 1
+original_polydata = None
+current_polydata = None
+plane1 = vtk.vtkPlane()
+plane2 = vtk.vtkPlane()
+dual_mode = False
 
-    def setup_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
+# UI callbacks
 
-        # Left: 2D Matplotlib viewer
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        main_layout.addWidget(left, 1)
-        # Canvas
-        self.canvas = FigureCanvas(Figure(figsize=(4,4)))
-        self.ax = self.canvas.figure.subplots()
-        left_layout.addWidget(self.canvas)
-        # Controls
-        ctrl = QWidget()
-        ctrl_layout = QVBoxLayout(ctrl)
-        left_layout.addWidget(ctrl)
-        # Input
-        in_btn = QPushButton("Cargar DICOM/NIfTI")
-        in_btn.clicked.connect(self.load_volume)
-        ctrl_layout.addWidget(in_btn)
-        # Orientation
-        ori_layout = QHBoxLayout()
-        ori_layout.addWidget(QLabel("Orientación:"))
-        self.orient_cb = QComboBox()
-        self.orient_cb.addItems(["Axial","Coronal","Sagital"])
-        self.orient_cb.currentIndexChanged.connect(self.change_orientation)
-        ori_layout.addWidget(self.orient_cb)
-        ctrl_layout.addLayout(ori_layout)
-        # Slice slider
-        self.slice_slider = QSlider(Qt.Horizontal)
-        self.slice_slider.valueChanged.connect(self.update_image)
-        ctrl_layout.addWidget(QLabel("Slice"))
-        ctrl_layout.addWidget(self.slice_slider)
-        # WL sliders
-        self.wc_slider = QSlider(Qt.Horizontal)
-        self.wc_slider.valueChanged.connect(self.update_image)
-        ctrl_layout.addWidget(QLabel("Window Center"))
-        ctrl_layout.addWidget(self.wc_slider)
-        self.ww_slider = QSlider(Qt.Horizontal)
-        self.ww_slider.valueChanged.connect(self.update_image)
-        ctrl_layout.addWidget(QLabel("Window Width"))
-        ctrl_layout.addWidget(self.ww_slider)
-        # Threshold slider
-        self.thr_slider = QSlider(Qt.Horizontal)
-        ctrl_layout.addWidget(QLabel("Threshold"))
-        ctrl_layout.addWidget(self.thr_slider)
-        # Generate STL
-        stl_btn = QPushButton("Generate STL")
-        stl_btn.clicked.connect(self.generate_stl)
-        ctrl_layout.addWidget(stl_btn)
+def change_orientation(value):
+    global axis
+    axis = {'Axial': 0, 'Coronal': 1, 'Sagital': 2}[value]
+    if volume is not None:
+        ui.get('slice_slider').props(f'min=0 max={volume.shape[axis]-1} value={volume.shape[axis]//2}')
+        update_image()
 
-        # Right: VTK 3D Editor
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        main_layout.addWidget(right, 1)
-        # VTK widget
-        self.vtk_widget = QVTKRenderWindowInteractor(right)
-        right_layout.addWidget(self.vtk_widget)
-        self.renderer = vtk.vtkRenderer()
-        self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
-        self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
-        style = vtk.vtkInteractorStyleTrackballCamera()
-        self.interactor.SetInteractorStyle(style)
-        self.interactor.Initialize()
-        # Buttons for clipping and export
-        clip_layout = QHBoxLayout()
-        self.enable_clip = QPushButton("Enable Clip")
-        self.enable_clip.clicked.connect(self.toggle_clip_plane)
-        clip_layout.addWidget(self.enable_clip)
-        self.apply_clip = QPushButton("Apply Clip")
-        self.apply_clip.setEnabled(False)
-        self.apply_clip.clicked.connect(self.apply_clipping)
-        clip_layout.addWidget(self.apply_clip)
-        right_layout.addLayout(clip_layout)
 
-        dual_layout = QHBoxLayout()
-        self.enable_dual = QPushButton("Dual Planes")
-        self.enable_dual.clicked.connect(self.toggle_dual_planes)
-        dual_layout.addWidget(self.enable_dual)
-        self.delete_between = QPushButton("Delete Between")
-        self.delete_between.setEnabled(False)
-        self.delete_between.clicked.connect(self.delete_between_planes)
-        dual_layout.addWidget(self.delete_between)
-        right_layout.addLayout(dual_layout)
+def load_volume(files):
+    global volume, axis, vmin, vmax
+    paths = []
+    for f in files:
+        tmp = os.path.join(tempfile.gettempdir(), f.name)
+        with open(tmp, 'wb') as out:
+            out.write(f.content)
+        paths.append(tmp)
+    # Detect NIfTI vs DICOM
+    if len(paths) == 1 and paths[0].lower().endswith(('.nii', '.nii.gz')):
+        vol = nib.load(paths[0]).get_fdata()
+    else:
+        dcm_files = [p for p in paths if p.lower().endswith('.dcm')]
+        slices = [pydicom.dcmread(p) for p in sorted(dcm_files)]
+        slices.sort(key=lambda s: float(getattr(s, 'ImagePositionPatient', [0,0,0])[2]))
+        vol = np.stack([s.pixel_array for s in slices])
+    volume = vol.astype(np.float32)
+    # Window defaults
+    vmin, vmax = np.percentile(volume, [1, 99])
+    center = (vmax + vmin) / 2
+    width = max(vmax - vmin, 1)
+    ui.get('slice_slider').props(f'min=0 max={volume.shape[axis]-1} value={volume.shape[axis]//2}')
+    ui.get('wc_slider').props(f'min={int(vmin)} max={int(vmax)} value={int(center)}')
+    ui.get('ww_slider').props(f'min=1 max={int(width)} value={int(width)}')
+    ui.get('thr_slider').props(f'min={int(vmin)} max={int(vmax)} value={int(center)}')
+    update_image()
 
-        export_btn = QPushButton("Export STL")
-        export_btn.clicked.connect(self.export_stl)
-        right_layout.addWidget(export_btn)
 
-        self.plane_widget = None
-        self.plane_widget2 = None
-        self.plane1 = vtk.vtkPlane()
-        self.plane2 = vtk.vtkPlane()
-        self.dual_mode = False
-        self.clipping_active = False
-        self.resize(1400, 800)
+def update_image():
+    global volume, axis
+    if volume is None:
+        return
+    sl = ui.get('slice_slider').value
+    if axis == 0:
+        img = volume[sl]
+    elif axis == 1:
+        img = volume[:, sl]
+    else:
+        img = volume[:, :, sl]
+    c = ui.get('wc_slider').value
+    w = max(ui.get('ww_slider').value, 1)
+    mn, mx = c - w/2, c + w/2
+    imgw = np.clip(img, mn, mx)
+    disp = ((imgw - mn) / w * 255).astype(np.uint8)
+    thr = ui.get('thr_slider').value
+    mask = img > thr
+    # Render with matplotlib into base64
+    fig, ax = plt.subplots(figsize=(4,4))
+    ax.imshow(disp, cmap='gray')
+    ax.imshow(np.ma.masked_where(~mask, mask), cmap='jet', alpha=0.3)
+    ax.axis('off')
+    buf = BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+    data = base64.b64encode(buf.getvalue()).decode('ascii')
+    ui.get('img').update(f'data:image/png;base64,{data}')
 
-    def load_volume(self):
-        path = QFileDialog.getExistingDirectory(self, "Select DICOM Folder or NIfTI File")
-        if not path:
-            file, _ = QFileDialog.getOpenFileName(self, "Select NIfTI", filter="NIfTI (*.nii *.nii.gz)")
-            path = file or None
-        if not path: return
-        if os.path.isdir(path):
-            files = sorted(f for f in os.listdir(path) if f.lower().endswith('.dcm'))
-            slices = [pydicom.dcmread(os.path.join(path, f)) for f in files]
-            slices.sort(key=lambda s: float(getattr(s,'ImagePositionPatient',[0,0,0])[2]))
-            vol = np.stack([s.pixel_array for s in slices])
-        else:
-            vol = nib.load(path).get_fdata()
-        self.volume = vol
-        vmin, vmax = np.percentile(vol, [1,99])
-        center = (vmax+vmin)/2; width = max(vmax-vmin,1)
-        # configure sliders
-        self.slice_slider.setRange(0, vol.shape[self.axis]-1)
-        self.slice_slider.setValue(vol.shape[self.axis]//2)
-        self.wc_slider.setRange(int(vmin),int(vmax)); self.wc_slider.setValue(int(center))
-        self.ww_slider.setRange(1,int(width)); self.ww_slider.setValue(int(width))
-        self.thr_slider.setRange(int(vmin),int(vmax)); self.thr_slider.setValue(int(center))
-        self.update_image()
 
-    def change_orientation(self, index):
-        """Update viewing axis when orientation combo is changed."""
-        self.axis = index
-        if self.volume is not None:
-            self.slice_slider.setRange(0, self.volume.shape[self.axis]-1)
-            self.slice_slider.setValue(self.volume.shape[self.axis]//2)
-        self.update_image()
+def generate_stl():
+    global original_polydata, current_polydata
+    mask = (volume > ui.get('thr_slider').value).astype(np.uint8)
+    verts, faces, _, _ = marching_cubes(mask, level=0)
+    # Build VTK PolyData
+    poly = vtk.vtkPolyData()
+    pts = vtk.vtkPoints()
+    pts.SetData(numpy_to_vtk(verts))
+    poly.SetPoints(pts)
+    cells = vtk.vtkCellArray()
+    for f in faces:
+        cells.InsertNextCell(3)
+        cells.InsertCellPoint(int(f[0]))
+        cells.InsertCellPoint(int(f[1]))
+        cells.InsertCellPoint(int(f[2]))
+    poly.SetPolys(cells)
+    original_polydata = poly
+    current_polydata = poly
+    ui.notify('STL generado', color='positive')
+    ui.run_javascript('loadModel();')
 
-    def update_image(self):
-        if self.volume is None: return
-        sl = self.slice_slider.value()
-        if self.axis == 0: img = self.volume[sl]
-        elif self.axis == 1: img = self.volume[:,sl]
-        else: img = self.volume[:,:,sl]
-        c = self.wc_slider.value(); w = max(self.ww_slider.value(),1)
-        mn = c - w/2; mx = c + w/2
-        imgw = np.clip(img, mn, mx)
-        disp = ((imgw - mn)/w*255).astype(np.uint8)
-        thr = self.thr_slider.value()
-        mask = img > thr
-        self.ax.clear(); self.ax.imshow(disp,cmap='gray')
-        self.ax.imshow(np.ma.masked_where(~mask,mask),cmap='jet',alpha=0.3)
-        self.ax.axis('off'); self.canvas.draw()
 
-    def generate_stl(self):
-        if self.volume is None: return
-        mask = (self.volume > self.thr_slider.value()).astype(np.uint8)
-        verts, faces, _, _ = marching_cubes(mask, level=0)
-        # Build VTK PolyData
-        poly = vtk.vtkPolyData()
-        pts = vtk.vtkPoints()
-        pts.SetData(numpy_to_vtk(verts))
-        poly.SetPoints(pts)
-        cells = vtk.vtkCellArray()
-        for f in faces:
-            cells.InsertNextCell(3)
-            cells.InsertCellPoint(int(f[0]))
-            cells.InsertCellPoint(int(f[1]))
-            cells.InsertCellPoint(int(f[2]))
-        poly.SetPolys(cells)
-        self.original_polydata = poly
-        self.mapper = vtk.vtkPolyDataMapper(); self.mapper.SetInputData(poly)
-        if hasattr(self,'actor'): self.renderer.RemoveActor(self.actor)
-        self.actor = vtk.vtkActor(); self.actor.SetMapper(self.mapper)
-        self.renderer.AddActor(self.actor); self.renderer.ResetCamera()
-        self.vtk_widget.GetRenderWindow().Render()
+def apply_clip():
+    global original_polydata, current_polydata
+    clip = vtk.vtkClipPolyData()
+    clip.SetInputData(original_polydata)
+    clip.SetClipFunction(plane1)
+    clip.Update()
+    original_polydata = clip.GetOutput()
+    current_polydata = original_polydata
+    ui.notify('Clipping aplicado', color='positive')
+    ui.run_javascript('loadModel();')
 
-    def create_plane_widget(self, plane):
-        """Create an implicit plane widget bound to *plane* and return it."""
-        w = vtk.vtkImplicitPlaneWidget()
-        w.SetInteractor(self.interactor)
-        w.SetPlaceFactor(1.0)
-        w.SetInputData(self.original_polydata)
-        w.PlaceWidget()
-        w.GetPlane(plane)
-        w.AddObserver('InteractionEvent', lambda o, e: self.update_clip(o, plane))
-        w.On()
-        # Attach the clipping plane to the mapper so rendering reflects its
-        # position without modifying the input polydata
-        self.mapper.AddClippingPlane(plane)
-        return w
 
-    def toggle_clip_plane(self):
-        if not hasattr(self,'actor'): return
-        if not self.clipping_active:
-            self.plane_widget = self.create_plane_widget(self.plane1)
-            self.clipping_active = True
-            self.apply_clip.setEnabled(True)
-        else:
-            if self.plane_widget:
-                self.plane_widget.Off()
-                self.plane_widget = None
-            # Remove the plane from the mapper so the mesh is shown uncut
-            self.mapper.RemoveAllClippingPlanes()
-            self.clipping_active = False
-            self.apply_clip.setEnabled(False)
-            self.vtk_widget.GetRenderWindow().Render()
+def delete_between():
+    global original_polydata, current_polydata
+    clip1 = vtk.vtkClipPolyData()
+    clip1.SetInputData(original_polydata)
+    clip1.SetClipFunction(plane1)
+    clip1.Update()
+    clip2 = vtk.vtkClipPolyData()
+    clip2.SetInputData(original_polydata)
+    clip2.SetClipFunction(plane2)
+    clip2.InsideOutOn()
+    clip2.Update()
+    appender = vtk.vtkAppendPolyData()
+    appender.AddInputData(clip1.GetOutput())
+    appender.AddInputData(clip2.GetOutput())
+    appender.Update()
+    original_polydata = appender.GetOutput()
+    current_polydata = original_polydata
+    ui.notify('Entre planos eliminado', color='positive')
+    ui.run_javascript('loadModel();')
 
-    def update_clip(self, widget, plane):
-        """Update *plane* from *widget* and redraw the scene."""
-        widget.GetPlane(plane)
-        self.vtk_widget.GetRenderWindow().Render()
 
-    def apply_clipping(self):
-        """Permanently apply the current clipping plane to the mesh."""
-        clip = vtk.vtkClipPolyData()
-        clip.SetInputData(self.original_polydata)
-        clip.SetClipFunction(self.plane1)
-        clip.Update()
-        self.original_polydata = clip.GetOutput()
-        self.mapper.SetInputData(self.original_polydata)
-        # Remove widget and associated clipping plane from the mapper
-        if self.plane_widget:
-            self.plane_widget.Off()
-            self.plane_widget = None
-        self.mapper.RemoveAllClippingPlanes()
-        self.apply_clip.setEnabled(False)
-        self.clipping_active = False
-        self.vtk_widget.GetRenderWindow().Render()
+def export_stl():
+    global current_polydata
+    fn = os.path.join(tempfile.gettempdir(), 'export.stl')
+    writer = vtk.vtkSTLWriter()
+    writer.SetFileName(fn)
+    writer.SetInputData(current_polydata)
+    writer.Write()
+    return ui.download(fn, 'model.stl')
 
-    def toggle_dual_planes(self):
-        if not hasattr(self,'actor'): return
-        if not self.dual_mode:
-            self.plane_widget = self.create_plane_widget(self.plane1)
-            self.plane_widget2 = self.create_plane_widget(self.plane2)
-            self.dual_mode = True
-            self.delete_between.setEnabled(True)
-        else:
-            if self.plane_widget:
-                self.plane_widget.Off()
-                self.plane_widget = None
-            if self.plane_widget2:
-                self.plane_widget2.Off()
-                self.plane_widget2 = None
-            self.dual_mode = False
-            self.delete_between.setEnabled(False)
-            # Remove planes from the mapper so clipping is disabled
-            self.mapper.RemoveAllClippingPlanes()
-            self.vtk_widget.GetRenderWindow().Render()
+# FastAPI endpoint for fetching mesh
+@app.get('/model')
+def get_model():
+    verts = vtk_to_numpy(current_polydata.GetPoints().GetData()).tolist()
+    faces = []
+    polys = current_polydata.GetPolys()
+    polys.InitTraversal()
+    idList = vtk.vtkIdList()
+    while polys.GetNextCell(idList):
+        if idList.GetNumberOfIds() == 3:
+            faces.append([idList.GetId(i) for i in range(3)])
+    return {'vertices': verts, 'faces': faces}
 
-    def delete_between_planes(self):
-        clip1 = vtk.vtkClipPolyData()
-        clip1.SetInputData(self.original_polydata)
-        clip1.SetClipFunction(self.plane1)
-        clip1.Update()
-        clip2 = vtk.vtkClipPolyData()
-        clip2.SetInputData(self.original_polydata)
-        clip2.SetClipFunction(self.plane2)
-        clip2.InsideOutOn()
-        clip2.Update()
-        appender = vtk.vtkAppendPolyData()
-        appender.AddInputData(clip1.GetOutput())
-        appender.AddInputData(clip2.GetOutput())
-        appender.Update()
-        self.original_polydata = appender.GetOutput()
-        self.mapper.SetInputData(self.original_polydata)
-        if self.plane_widget:
-            self.plane_widget.Off()
-            self.plane_widget = None
-        if self.plane_widget2:
-            self.plane_widget2.Off()
-            self.plane_widget2 = None
-        # Clear all clipping planes since the geometry now contains the result
-        self.mapper.RemoveAllClippingPlanes()
-        self.dual_mode = False
-        self.delete_between.setEnabled(False)
-        self.vtk_widget.GetRenderWindow().Render()
+# Build UI
+with ui.row():
+    with ui.column().style('width:50%'):
+        ui.upload(load_volume).props('label="Cargar DICOM/NIfTI" multiple accept=".dcm,.nii,.nii.gz"')
+        ui.select(['Axial','Coronal','Sagital'], label='Orientación', value='Axial', on_change=lambda e: change_orientation(e.value))
+        ui.slider(label='Slice', id='slice_slider', on_change=lambda _: update_image())
+        ui.slider(label='Window Center', id='wc_slider', on_change=lambda _: update_image())
+        ui.slider(label='Window Width', id='ww_slider', on_change=lambda _: update_image())
+        ui.slider(label='Threshold', id='thr_slider', on_change=lambda _: update_image())
+        ui.image(id='img')
+        ui.button('Generate STL', on_click=generate_stl)
+    with ui.column().style('width:50%'):
+        ui.html('''
+<div id="viewer" style="width:100%; height:600px;"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+var scene, camera, renderer, modelMesh;
+function init() {
+    const viewer = document.getElementById('viewer');
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, viewer.clientWidth/viewer.clientHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+    viewer.appendChild(renderer.domElement);
+    var light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0,1,1).normalize(); scene.add(light);
+    camera.position.z = 100;
+    loadModel(); animate();
+}
+function loadModel() {
+    fetch('/model').then(res=>res.json()).then(data=>{
+        if (modelMesh) scene.remove(modelMesh);
+        var geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.vertices.flat(), 3));
+        geometry.setIndex(data.faces.flat()); geometry.computeVertexNormals();
+        var material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, clippingPlanes: [] });
+        modelMesh = new THREE.Mesh(geometry, material); scene.add(modelMesh);
+    });
+}
+function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+init();
+</script>
+''')
+        ui.button('Enable Clip', on_click=lambda: ui.notify('Preview clip not implemented'))
+        ui.button('Apply Clip', on_click=apply_clip)
+        ui.button('Dual Planes', on_click=lambda: ui.notify('Dual preview not implemented'))
+        ui.button('Delete Between', on_click=delete_between)
+        ui.button('Export STL', on_click=export_stl)
 
-    def export_stl(self):
-        if not hasattr(self,'actor'): return
-        fn, _ = QFileDialog.getSaveFileName(self, 'Export STL', '', filter='STL (*.stl)')
-        if fn:
-            writer = vtk.vtkSTLWriter()
-            writer.SetFileName(fn)
-            writer.SetInputData(self.mapper.GetInput())
-            writer.Write()
-            QMessageBox.information(self, 'Saved', f'STL saved to {fn}')
-
-if __name__=='__main__':
-    app = QApplication(sys.argv)
-    win = CTSTLEditor()
-    win.show()
-    sys.exit(app.exec_())
+ui.run()

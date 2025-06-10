@@ -1,22 +1,22 @@
 services:
-  checklist-app:
+  dicom-viewer:
     container_name: dicom-viewer
     build: .
     ports:
+      - "8080:8080"
     networks: 
       - infraestructura_app-network
     environment:
-
-    volumes:
-
+      NICEGUI_HOST: 0.0.0.0
+      NICEGUI_PORT: 8080
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.checklist.rule=Host(`ctscan.sintaq.net`)"
-      - "traefik.http.routers.checklist.entrypoints=websecure"
-      - "traefik.http.routers.checklist.tls=true"
-      - "traefik.http.routers.checklist.tls.certresolver=cloudflare"
-      - "traefik.http.services.checklist.loadbalancer.server.port=8000"
+      - "traefik.http.routers.dicom.rule=Host(`ctscan.sintaq.net`)"
+      - "traefik.http.routers.dicom.entrypoints=websecure"
+      - "traefik.http.routers.dicom.tls=true"
+      - "traefik.http.routers.dicom.tls.certresolver=cloudflare"
+      - "traefik.http.services.dicom.loadbalancer.server.port=8080"
 networks:
   infraestructura_app-network:
-    external: true
+    external: true  
