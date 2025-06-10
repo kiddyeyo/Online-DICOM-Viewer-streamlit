@@ -1,0 +1,22 @@
+services:
+  checklist-app:
+    container_name: dicom-viewer
+    build: .
+    ports:
+    networks: 
+      - infraestructura_app-network
+    environment:
+
+    volumes:
+
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.checklist.rule=Host(`ctscan.sintaq.net`)"
+      - "traefik.http.routers.checklist.entrypoints=websecure"
+      - "traefik.http.routers.checklist.tls=true"
+      - "traefik.http.routers.checklist.tls.certresolver=cloudflare"
+      - "traefik.http.services.checklist.loadbalancer.server.port=8000"
+networks:
+  infraestructura_app-network:
+    external: true
