@@ -91,11 +91,17 @@ if vol is not None:
     # --- STL Generación y visualización 3D ---
     st.header("Vista 3D y edición STL")
     gen_stl = st.button("Generar STL")
-    if gen_stl or "mesh" in st.session_state:
-        mask3d = (vol > thr).astype(np.uint8)
-        verts, faces, _, _ = marching_cubes(mask3d, level=0)
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-        st.session_state.mesh = mesh
+    if gen_stl:
+        with st.spinner("Generando STL..."):
+            mask3d = (vol > thr).astype(np.uint8)
+            verts, faces, _, _ = marching_cubes(mask3d, level=0)
+            mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+            st.session_state.mesh = mesh
+        st.success("STL generado.")
+
+    if "mesh" in st.session_state:
+        mesh = st.session_state.mesh
+        verts, faces = mesh.vertices, mesh.faces
 
         # Visualización 3D (pyvista+plotly)
         cloud = pv.PolyData(verts)
