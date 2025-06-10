@@ -79,7 +79,14 @@ if vol is not None:
     mask = img > thr
     overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
     overlay[mask] = [255, 0, 0]
-    st.image(np.concatenate([disp[..., None]]*3, axis=-1) * 0.7 + overlay * 0.3, width=400)
+    composite = (
+        np.clip(
+            np.concatenate([disp[..., None]] * 3, axis=-1) * 0.7 + overlay * 0.3,
+            0,
+            255,
+        ).astype(np.uint8)
+    )
+    st.image(composite, channels="RGB", width=400)
 
     # --- STL Generación y visualización 3D ---
     st.header("Vista 3D y edición STL")
