@@ -1,22 +1,25 @@
 services:
   dicom-viewer:
     container_name: dicom-viewer
+    restart: unless-stopped
     build: .
     ports:
-      - "8080:8080"
+      - "8501:8501"
+    volumes:
+      - ./uploads:/app/uploads  # para archivos temporales
     networks: 
       - infraestructura_app-network
     environment:
-      NICEGUI_HOST: 0.0.0.0
-      NICEGUI_PORT: 8080
-    restart: unless-stopped
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dicom.rule=Host(`ctscan.sintaq.net`)"
       - "traefik.http.routers.dicom.entrypoints=websecure"
       - "traefik.http.routers.dicom.tls=true"
       - "traefik.http.routers.dicom.tls.certresolver=cloudflare"
-      - "traefik.http.services.dicom.loadbalancer.server.port=8080"
+      - "traefik.http.services.dicom.loadbalancer.server.port=8501"
+
 networks:
   infraestructura_app-network:
-    external: true  
+    external: true 
