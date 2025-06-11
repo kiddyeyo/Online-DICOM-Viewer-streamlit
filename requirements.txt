@@ -2,11 +2,6 @@ numpy
 pydicom
 nibabel
 scikit-image
-vtk
-matplotlib
 plotly
 streamlit
-pyvista
-pyvista-xarray
 trimesh
-xvfbwrapper
