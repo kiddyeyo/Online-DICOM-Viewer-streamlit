@@ -11,28 +11,28 @@ Este proyecto ofrece un visor de volúmenes DICOM y NIfTI construido con **Strea
 
 ## Instalación
 
-### Clona este repositorio.
+### Clona este repositorio
 
-### Instala las dependencias:
+### Instala las dependencias
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Ejecuta la aplicación:
+### Ejecuta la aplicación
 
 ```bash
 streamlit run app.py
 ```
 
-### También puedes usar Docker:
+### También puedes usar Docker
 
 ```bash
 docker build -t dicom-viewer 
 docker run -p 8501:8501 dicom-viewer
 ```
 
-### O bien, con docker-compose:
+### O bien, con docker-compose
 
 ```bash
 docker-compose up
