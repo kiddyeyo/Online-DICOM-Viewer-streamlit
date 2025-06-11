@@ -51,25 +51,24 @@ st.markdown(
 
 st.title("Visor/Editor CT 2D+3D STL")
 
-# --- Barra lateral: carga y controles ---
-with st.sidebar:
-    st.header("Carga de volumen")
-    uploaded = st.file_uploader("Sube un ZIP de DICOM o un archivo NIfTI", type=["zip","nii","nii.gz"])
-    axis_name = st.selectbox("Orientación", ["Axial", "Coronal", "Sagital"])
-    orientation_map = {'Axial': 0, 'Coronal': 1, 'Sagital': 2}
-    axis = orientation_map[axis_name]
-    if st.button("Cargar volumen") and uploaded:
-        if uploaded.name.lower().endswith('.zip'):
-            vol = load_dicom_series(uploaded)
-        else:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".nii.gz")
-            temp_file.write(uploaded.read())
-            temp_file.close()
-            vol = load_nifti(temp_file.name)
-            os.unlink(temp_file.name)
-        st.session_state['volume'] = vol
-        st.session_state.pop('mesh', None)
-        st.session_state.pop('clipped_mesh', None)
+# --- Controles principales en la parte superior ---
+st.header("Carga de volumen y controles 2D")
+uploaded = st.file_uploader("Sube un ZIP de DICOM o un archivo NIfTI", type=["zip","nii","nii.gz"])
+axis_name = st.selectbox("Orientación", ["Axial", "Coronal", "Sagital"])
+orientation_map = {'Axial': 0, 'Coronal': 1, 'Sagital': 2}
+axis = orientation_map[axis_name]
+if st.button("Cargar volumen") and uploaded:
+    if uploaded.name.lower().endswith('.zip'):
+        vol = load_dicom_series(uploaded)
+    else:
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".nii.gz")
+        temp_file.write(uploaded.read())
+        temp_file.close()
+        vol = load_nifti(temp_file.name)
+        os.unlink(temp_file.name)
+    st.session_state['volume'] = vol
+    st.session_state.pop('mesh', None)
+    st.session_state.pop('clipped_mesh', None)
 
 # --- 2D y controles ---
 if 'volume' in st.session_state:
@@ -79,11 +78,10 @@ if 'volume' in st.session_state:
     width = max(vmax - vmin, 1)
     slice_max = vol.shape[axis] - 1
 
-    with st.sidebar:
-        slice_idx = st.slider("Slice", 0, slice_max, slice_max//2)
-        wc = st.slider("Window Center", int(vmin), int(vmax), int(center))
-        ww = st.slider("Window Width", 1, int(width), int(width))
-        thr = st.slider("Threshold", int(vmin), int(vmax), int(center))
+    slice_idx = st.slider("Corte", 0, slice_max, slice_max//2)
+    wc = st.slider("Brillo", int(vmin), int(vmax), int(center))
+    ww = st.slider("Contraste", 1, int(width), int(width))
+    thr = st.slider("Umbral", int(vmin), int(vmax), int(center))
 
     if axis == 0: img = vol[slice_idx]
     elif axis == 1: img = vol[:, slice_idx]
@@ -94,9 +92,9 @@ if 'volume' in st.session_state:
     disp = ((imgw - mn) / ww * 255).astype(np.uint8)
 
     st.subheader("Vista 2D")
-    st.image(disp, clamp=True, channels="GRAY", width=400)
-    st.caption("Slice con threshold (máscara en color)")
-
+    col_empty1, col_a, col_b, col_empty2 = st.columns([1, 3, 3, 1])
+    with col_a:
+        st.image(disp, clamp=True, channels="GRAY", width=400)
     mask = img > thr
     overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
     overlay[mask] = [255, 0, 0]
@@ -107,7 +105,9 @@ if 'volume' in st.session_state:
             255,
         ).astype(np.uint8)
     )
-    st.image(composite, channels="RGB", width=400)
+    with col_b:
+        st.image(composite, channels="RGB", width=400)
+    st.caption("Slice con threshold (máscara en color)")
 
     # --- 3D Preview y flujo pseudo-interactivo ---
     st.header("Vista 3D y Edición STL")
@@ -124,14 +124,18 @@ if 'volume' in st.session_state:
                 help="Valores mayores generan mallas más ligeras"
             )
             if st.button("Generar/Actualizar STL"):
+                progress = st.progress(0)
                 with st.spinner("Calculando superficie..."):
                     mask3d = (vol > thr).astype(np.uint8)
+                    progress.progress(25)
                     verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
+                    progress.progress(75)
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
                     st.session_state['faces'] = faces
                     st.session_state.pop('clipped_mesh', None)
+                    progress.progress(100)
                 st.success("STL generado.")
         with col2:
             if 'mesh' in st.session_state:
