@@ -1,18 +1,44 @@
-# Online-DICOM-Viewer
+# Online DICOM Viewer
 
-Esta aplicación de Streamlit permite cargar series DICOM o archivos NIfTI y
-visualizar cortes 2D y una malla 3D generada con *marching cubes*.  Incluye
-herramientas básicas de clipping y exportación a STL.
+Este proyecto ofrece un visor de volúmenes DICOM y NIfTI construido con **Streamlit**. Permite explorar cortes 2D, generar mallas 3D y exportarlas a STL de forma sencilla.
 
-## Mejoras recientes
+## Características principales
 
-- Se añadieron cachés para acelerar la carga de los volúmenes y el cálculo de
-  estadísticas.
-- El panel de opciones 3D ahora permite escoger la resolución de la malla
-  (``step size``) para generar modelos más ligeros y fluidos.
-- El visor 3D mantiene la cámara entre interacciones para evitar saltos
-  molestos al actualizar.
-- Se añadió un selector de "modo de interacción" para el visor 3D y un breve
-  texto de ayuda con los controles básicos.
-- Ahora el deslizador de posición del plano muestra una vista previa del
-  corte antes de aplicarlo.
+- Soporte para series DICOM (comprimidas en ZIP) y archivos NIfTI.
+- Visualización de cortes axiales, coronales y sagitales.
+- Generación de mallas 3D mediante *marching cubes* con opción de recorte.
+- Descarga de la malla en formato STL.
+
+## Instalación
+
+1. Clona este repositorio.
+2. Instala las dependencias:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Ejecuta la aplicación:
+   ```bash
+   streamlit run app.py
+   ```
+
+También puedes usar Docker:
+```bash
+docker build -t dicom-viewer .
+docker run -p 8501:8501 dicom-viewer
+```
+O bien, con docker-compose:
+```bash
+docker-compose up
+```
+
+## Uso
+
+Al iniciar la app podrás subir un ZIP con archivos DICOM o un archivo `.nii/.nii.gz`. Selecciona la orientación deseada, ajusta brillo, contraste y umbral, y navega por los cortes. En la pestaña de **Vista 3D** podrás generar la malla y exportarla.
+
+## Preview
+
+_Agrega aquí una imagen o GIF de la aplicación en funcionamiento._
+
+---
+
+¡Listo! Con esto tendrás un visor 3D simple para tus volúmenes médicos.
