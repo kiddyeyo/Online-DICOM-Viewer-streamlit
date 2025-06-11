@@ -169,44 +169,44 @@ if 'volume' in st.session_state:
                         st.session_state['clipped_mesh'] = mesh_clip
                         st.success("Recorte aplicado.")
 
-    # --- Render 3D preview ---
-    preview_mesh = None
-    if 'clipped_mesh' in st.session_state:
-        preview_mesh = st.session_state['clipped_mesh']
-    elif 'mesh' in st.session_state:
-        preview_mesh = st.session_state['mesh']
+        # --- Render 3D preview ---
+        preview_mesh = None
+        if 'clipped_mesh' in st.session_state:
+            preview_mesh = st.session_state['clipped_mesh']
+        elif 'mesh' in st.session_state:
+            preview_mesh = st.session_state['mesh']
 
-    if preview_mesh:
-        verts = preview_mesh.vertices
-        faces = preview_mesh.faces
-        if len(verts) > 0 and len(faces) > 0:
-            x, y, z = verts.T
-            if faces.ndim > 2:
-                faces_tri = faces.reshape(-1, 3)
+        if preview_mesh:
+            verts = preview_mesh.vertices
+            faces = preview_mesh.faces
+            if len(verts) > 0 and len(faces) > 0:
+                x, y, z = verts.T
+                if faces.ndim > 2:
+                    faces_tri = faces.reshape(-1, 3)
+                else:
+                    faces_tri = faces
+                i, j, k = faces_tri.T
+                mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
+                fig = go.Figure(data=[mesh3d])
+                fig.update_layout(
+                    scene_aspectmode="data",
+                    scene_dragmode=drag_mode,
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    uirevision="mesh"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption(
+                    "Controles: arrastra para rotar, rueda para zoom y Ctrl + Click para desplazar"
+                )
             else:
-                faces_tri = faces
-            i, j, k = faces_tri.T
-            mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
-            fig = go.Figure(data=[mesh3d])
-            fig.update_layout(
-                scene_aspectmode="data",
-                scene_dragmode=drag_mode,
-                margin=dict(l=0, r=0, b=0, t=0),
-                uirevision="mesh"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(
-                "Controles: arrastra para rotar, rueda para zoom y Ctrl + Click para desplazar"
-            )
-        else:
-            st.warning("Mesh vacía tras clipping.")
+                st.warning("Mesh vacía tras clipping.")
 
-        # --- Exportación STL ---
-        if st.button("Exportar STL"):
-            export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")
-            preview_mesh.export(export_path)
-            with open(export_path, "rb") as f:
-                st.download_button("Descargar STL", f, file_name="mesh_export.stl", mime="application/sla")
+            # --- Exportación STL ---
+            if st.button("Exportar STL"):
+                export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")
+                preview_mesh.export(export_path)
+                with open(export_path, "rb") as f:
+                    st.download_button("Descargar STL", f, file_name="mesh_export.stl", mime="application/sla")
 
 else:
     st.info("Carga un volumen DICOM (.zip de .dcm) o NIfTI (.nii/.nii.gz) para empezar.")
