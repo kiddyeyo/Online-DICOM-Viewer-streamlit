@@ -46,10 +46,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # --- Utilidades para cargar datos ---
 
-st.title("Visor/Editor CT 2D+3D STL")
+st.title("MirelesMed CT Viewer")
 
 # --- Controles principales en la parte superior ---
 sidebar = st.sidebar
@@ -197,7 +196,7 @@ if 'volume' in st.session_state:
             )
             st.plotly_chart(fig, use_container_width=True)
             st.caption(
-                "Controles: arrastra para rotar, rueda para zoom y ⇧ Shift para desplazar"
+                "Controles: arrastra para rotar, rueda para zoom y Ctrl + Click para desplazar"
             )
         else:
             st.warning("Mesh vacía tras clipping.")
