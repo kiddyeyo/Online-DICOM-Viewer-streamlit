@@ -6,24 +6,32 @@ from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 import trimesh
 
-st.set_page_config(layout="wide")
-
-# --- Utilidades para cargar datos ---
-
+@st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
     temp_dir = tempfile.mkdtemp()
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
         zip_ref.extractall(temp_dir)
     files = sorted([f for f in os.listdir(temp_dir) if f.lower().endswith('.dcm')])
     slices = [pydicom.dcmread(os.path.join(temp_dir, f)) for f in files]
-    slices.sort(key=lambda s: float(getattr(s, 'ImagePositionPatient', [0,0,0])[2]))
+    slices.sort(key=lambda s: float(getattr(s, 'ImagePositionPatient', [0, 0, 0])[2]))
     vol = np.stack([s.pixel_array for s in slices])
     return vol
 
+@st.cache_data(show_spinner=False)
 def load_nifti(nifti_file):
     img = nib.load(nifti_file)
     vol = img.get_fdata()
     return vol
+
+@st.cache_data(show_spinner=False)
+def volume_stats(vol):
+    vmin, vmax = np.percentile(vol, [1, 99]).astype(float)
+    return vmin, vmax
+
+st.set_page_config(layout="wide")
+
+
+# --- Utilidades para cargar datos ---
 
 st.title("Visor/Editor CT 2D+3D STL (Streamlit)")
 
@@ -50,9 +58,9 @@ with st.sidebar:
 # --- 2D y controles ---
 if 'volume' in st.session_state:
     vol = st.session_state['volume']
-    vmin, vmax = float(np.percentile(vol, [1,99])[0]), float(np.percentile(vol, [1,99])[1])
-    center = (vmax+vmin)/2
-    width = max(vmax-vmin, 1)
+    vmin, vmax = volume_stats(vol)
+    center = (vmax + vmin) / 2
+    width = max(vmax - vmin, 1)
     slice_max = vol.shape[axis] - 1
 
     with st.sidebar:
@@ -90,10 +98,14 @@ if 'volume' in st.session_state:
     with st.expander("Opciones de 3D / STL"):
         col1, col2 = st.columns(2)
         with col1:
+            step = st.slider(
+                "Resolución mesh (step size)", 1, 5, 1,
+                help="Valores mayores generan mallas más ligeras"
+            )
             if st.button("Generar/Actualizar STL"):
                 with st.spinner("Calculando superficie..."):
                     mask3d = (vol > thr).astype(np.uint8)
-                    verts, faces, _, _ = marching_cubes(mask3d, level=0)
+                    verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
@@ -134,7 +146,11 @@ if 'volume' in st.session_state:
             i, j, k = faces_tri.T
             mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
             fig = go.Figure(data=[mesh3d])
-            fig.update_layout(scene_aspectmode="data", margin=dict(l=0, r=0, b=0, t=0))
+            fig.update_layout(
+                scene_aspectmode="data",
+                margin=dict(l=0, r=0, b=0, t=0),
+                uirevision="mesh"
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("Mesh vacía tras clipping.")
