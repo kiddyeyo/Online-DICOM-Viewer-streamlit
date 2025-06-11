@@ -12,3 +12,5 @@ herramientas básicas de clipping y exportación a STL.
   (``step size``) para generar modelos más ligeros y fluidos.
 - El visor 3D mantiene la cámara entre interacciones para evitar saltos
   molestos al actualizar.
+- Se añadió un selector de "modo de interacción" para el visor 3D y un breve
+  texto de ayuda con los controles básicos.

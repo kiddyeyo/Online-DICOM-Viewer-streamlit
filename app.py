@@ -96,6 +96,11 @@ if 'volume' in st.session_state:
     # --- 3D Preview y flujo pseudo-interactivo ---
     st.header("Vista 3D y Edición STL")
     with st.expander("Opciones de 3D / STL"):
+        drag_mode = st.selectbox(
+            "Modo de interacción",
+            ["orbit", "turntable", "pan"],
+            format_func=lambda m: m.capitalize(),
+        )
         col1, col2 = st.columns(2)
         with col1:
             step = st.slider(
@@ -148,10 +153,14 @@ if 'volume' in st.session_state:
             fig = go.Figure(data=[mesh3d])
             fig.update_layout(
                 scene_aspectmode="data",
+                scene_dragmode=drag_mode,
                 margin=dict(l=0, r=0, b=0, t=0),
                 uirevision="mesh"
             )
             st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "Controles: arrastra para rotar, rueda para zoom y ⇧ Shift para desplazar"
+            )
         else:
             st.warning("Mesh vacía tras clipping.")
 
