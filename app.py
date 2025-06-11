@@ -6,6 +6,18 @@ from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 import trimesh
 
+def bounding_box(mask: np.ndarray):
+    """Return slices covering the True region of mask."""
+    if not np.any(mask):
+        return (slice(0, mask.shape[0]), slice(0, mask.shape[1]), slice(0, mask.shape[2]))
+    x_any = np.any(mask, axis=(1, 2))
+    y_any = np.any(mask, axis=(0, 2))
+    z_any = np.any(mask, axis=(0, 1))
+    x_min, x_max = np.where(x_any)[0][[0, -1]]
+    y_min, y_max = np.where(y_any)[0][[0, -1]]
+    z_min, z_max = np.where(z_any)[0][[0, -1]]
+    return (slice(x_min, x_max + 1), slice(y_min, y_max + 1), slice(z_min, z_max + 1))
+
 @st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
     temp_dir = tempfile.mkdtemp()
@@ -41,6 +53,10 @@ st.markdown(
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
+        .block-container { padding-top: 1rem !important; }
+        .stTabs [data-baseweb="tab-list"] {
+            margin-top: -2rem;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -49,6 +65,17 @@ st.markdown(
 # --- Utilidades para cargar datos ---
 
 st.title("MirelesMed CT Viewer")
+
+st.markdown(
+    """
+    <style>
+        h1 {
+            margin-bottom: 1.5rem !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- Controles principales en la parte superior ---
 sidebar = st.sidebar
@@ -133,9 +160,15 @@ if 'volume' in st.session_state:
                 if st.button("Generar/Actualizar STL"):
                     progress = st.progress(0)
                     with st.spinner("Calculando superficie..."):
-                        mask3d = (vol > thr).astype(np.uint8)
+                        # mask3d = (vol > thr).astype(np.uint8)
+                        mask3d = vol > thr
+                        bbox = bounding_box(mask3d)
+                        mask_crop = mask3d[bbox] 
                         progress.progress(25)
-                        verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
+                        # verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
+                        verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)
+                        offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])
+                        verts += offset
                         progress.progress(75)
                         mesh = trimesh.Trimesh(vertices=verts, faces=faces)
                         st.session_state['mesh'] = mesh
