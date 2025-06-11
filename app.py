@@ -3,10 +3,7 @@ import numpy as np
 import os, zipfile, tempfile
 import pydicom, nibabel as nib
 from skimage.measure import marching_cubes
-from xvfbwrapper import Xvfb
-vdisplay = Xvfb(width=1024, height=768)
-vdisplay.start()
-import pyvista as pv
+import plotly.graph_objects as go
 import trimesh
 
 st.set_page_config(layout="wide")
@@ -111,7 +108,7 @@ if 'volume' in st.session_state:
                     verts = st.session_state['verts']
                     faces = st.session_state['faces']
                     axis_num = {"X":0,"Y":1,"Z":2}[plane_axis]
-                    plane_val = verts[:,axis_num].min() + (verts[:,axis_num].ptp()) * plane_pos/100
+                    plane_val = verts[:,axis_num].min() + (np.ptp(verts[:,axis_num])) * plane_pos/100
                     faces_keep = np.all(verts[faces][:,:,axis_num] >= plane_val, axis=1)
                     faces_clip = faces[faces_keep]
                     mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
@@ -129,17 +126,16 @@ if 'volume' in st.session_state:
         verts = preview_mesh.vertices
         faces = preview_mesh.faces
         if len(verts) > 0 and len(faces) > 0:
-            cloud = pv.PolyData(verts)
-            if faces.ndim == 2:
-                faces = np.hstack([np.full((faces.shape[0], 1), 3), faces])
-                surf = pv.PolyData(verts, faces)
+            x, y, z = verts.T
+            if faces.ndim > 2:
+                faces_tri = faces.reshape(-1, 3)
             else:
-                surf = cloud.delaunay_3d().extract_geometry()
-            pl = pv.Plotter(off_screen=True)
-            pl.add_mesh(surf, color="lightgray")
-            pl.camera_position = "xy"
-            img_arr = pl.screenshot(None, return_img=True)
-            st.image(img_arr, caption="Vista 3D STL (preview)", width=400)
+                faces_tri = faces
+            i, j, k = faces_tri.T
+            mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
+            fig = go.Figure(data=[mesh3d])
+            fig.update_layout(scene_aspectmode="data", margin=dict(l=0, r=0, b=0, t=0))
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("Mesh vacía tras clipping.")
 
