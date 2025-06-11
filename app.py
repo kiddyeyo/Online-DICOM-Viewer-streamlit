@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import trimesh
 
 def bounding_box(mask: np.ndarray):
-    """Return slices covering the True region of mask."""
+    """Devuelve slices que cubren la región verdadera de la máscara."""
     if not np.any(mask):
         return (slice(0, mask.shape[0]), slice(0, mask.shape[1]), slice(0, mask.shape[2]))
     x_any = np.any(mask, axis=(1, 2))
@@ -20,33 +20,37 @@ def bounding_box(mask: np.ndarray):
 
 @st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
+    """Carga un ZIP con una serie DICOM y genera el volumen 3D."""
     temp_dir = tempfile.mkdtemp()
-    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+    with zipfile.ZipFile(zip_file, "r") as zip_ref:
         zip_ref.extractall(temp_dir)
-    files = sorted([f for f in os.listdir(temp_dir) if f.lower().endswith('.dcm')])
+    files = sorted([f for f in os.listdir(temp_dir) if f.lower().endswith(".dcm")])
     slices = [pydicom.dcmread(os.path.join(temp_dir, f)) for f in files]
-    slices.sort(key=lambda s: float(getattr(s, 'ImagePositionPatient', [0, 0, 0])[2]))
+    slices.sort(key=lambda s: float(getattr(s, "ImagePositionPatient", [0, 0, 0])[2]))
     vol = np.stack([s.pixel_array for s in slices])
     return vol
 
 @st.cache_data(show_spinner=False)
 def load_nifti(nifti_file):
+    """Carga un archivo NIfTI y devuelve el volumen."""
     img = nib.load(nifti_file)
     vol = img.get_fdata()
     return vol
 
 @st.cache_data(show_spinner=False)
 def volume_stats(vol):
+    """Obtiene el rango de intensidades útil para visualización."""
     vmin, vmax = np.percentile(vol, [1, 99]).astype(float)
     return vmin, vmax
 
+# --- Configuración de la página ---
 st.set_page_config(
     page_title="MirelesMed CT Viewer",
     page_icon="🩻",
     layout="wide",
 )
 
-# Hide Streamlit branding for a cleaner look
+# Oculta la marca de Streamlit para una apariencia limpia
 st.markdown(
     """
     <style>
@@ -108,6 +112,7 @@ if 'volume' in st.session_state:
     width = max(vmax - vmin, 1)
     slice_max = vol.shape[axis] - 1
 
+    # Parámetros de visualización 2D
     slice_idx = sidebar.slider("Corte", 0, slice_max, slice_max // 2)
     wc = sidebar.slider("Brillo", int(vmin), int(vmax), int(center))
     ww = sidebar.slider("Contraste", 1, int(width), int(width))
@@ -128,6 +133,7 @@ if 'volume' in st.session_state:
         col_a, col_b = st.columns(2)
         with col_a:
             st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
+        # Genera una máscara para superponer en rojo
         mask = img > thr
         overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
         overlay[mask] = [255, 0, 0]
@@ -142,7 +148,7 @@ if 'volume' in st.session_state:
             st.image(composite, channels="RGB", use_container_width=True)
         st.caption("Slice con threshold (máscara en color)")
 
-    # --- 3D Preview y flujo pseudo-interactivo ---
+    # --- Vista previa 3D y flujo pseudo-interactivo ---
     with tab3d:
         st.header("Vista 3D y Edición STL")
         col_view, col_ctrl = st.columns([2, 1])
@@ -156,14 +162,17 @@ if 'volume' in st.session_state:
             if st.button("Generar/Actualizar STL"):
                 progress = st.progress(0)
                 with st.spinner("Calculando superficie..."):
+                    # Crea una máscara 3D para extraer la malla
                     mask3d = vol > thr
                     bbox = bounding_box(mask3d)
                     mask_crop = mask3d[bbox]
                     progress.progress(25)
+                    # Marching cubes genera vértices y caras de la superficie
                     verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)
                     offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])
                     verts += offset
                     progress.progress(75)
+                    # Guarda la malla en la sesión
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
@@ -190,13 +199,14 @@ if 'volume' in st.session_state:
                     else:
                         plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100
                         faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)
+                    # Genera una nueva malla sin las caras cortadas
                     faces_clip = faces[faces_keep]
                     mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
                     st.session_state['clipped_mesh'] = mesh_clip
                     st.success("Recorte aplicado.")
         with col_view:
 
-            # --- Render 3D preview ---
+            # --- Renderizado de la vista 3D ---
             preview_mesh = None
             if 'clipped_mesh' in st.session_state:
                 preview_mesh = st.session_state['clipped_mesh']
@@ -216,7 +226,7 @@ if 'volume' in st.session_state:
                     mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
                     fig = go.Figure(data=[mesh3d])
 
-                # Preview plane position if controls exist
+                # Vista previa de la posición del plano si existen controles
                 if 'plane_axis' in st.session_state and 'plane_pos' in st.session_state:
                     plane_axis = st.session_state['plane_axis']
                     plane_pos = st.session_state['plane_pos']
