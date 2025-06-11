@@ -116,6 +116,27 @@ if 'volume' in st.session_state:
             key="thr",
         )
 
+    # Store slider results with fallback for component initialization
+    if slice_idx is None:
+        slice_idx = st.session_state.get("slice_idx", slice_max // 2)
+    else:
+        st.session_state["slice_idx"] = slice_idx
+
+    if wc is None:
+        wc = st.session_state.get("wc", int(center))
+    else:
+        st.session_state["wc"] = wc
+
+    if ww is None:
+        ww = st.session_state.get("ww", int(width))
+    else:
+        st.session_state["ww"] = ww
+
+    if thr is None:
+        thr = st.session_state.get("thr", int(center))
+    else:
+        st.session_state["thr"] = thr
+
     if axis == 0: img = vol[slice_idx]
     elif axis == 1: img = vol[:, slice_idx]
     else: img = vol[:, :, slice_idx]
