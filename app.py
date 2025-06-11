@@ -52,12 +52,16 @@ st.markdown(
 st.title("Visor/Editor CT 2D+3D STL")
 
 # --- Controles principales en la parte superior ---
-st.header("Carga de volumen y controles 2D")
-uploaded = st.file_uploader("Sube un ZIP de DICOM o un archivo NIfTI", type=["zip","nii","nii.gz"])
-axis_name = st.selectbox("Orientación", ["Axial", "Coronal", "Sagital"])
-orientation_map = {'Axial': 0, 'Coronal': 1, 'Sagital': 2}
+sidebar = st.sidebar
+
+sidebar.header("Carga de volumen y controles 2D")
+uploaded = sidebar.file_uploader(
+    "Sube un ZIP de DICOM o un archivo NIfTI", type=["zip", "nii", "nii.gz"]
+)
+axis_name = sidebar.selectbox("Orientación", ["Axial", "Coronal", "Sagital"])
+orientation_map = {"Axial": 0, "Coronal": 1, "Sagital": 2}
 axis = orientation_map[axis_name]
-if st.button("Cargar volumen") and uploaded:
+if sidebar.button("Cargar volumen") and uploaded:
     if uploaded.name.lower().endswith('.zip'):
         vol = load_dicom_series(uploaded)
     else:
@@ -78,10 +82,10 @@ if 'volume' in st.session_state:
     width = max(vmax - vmin, 1)
     slice_max = vol.shape[axis] - 1
 
-    slice_idx = st.slider("Corte", 0, slice_max, slice_max//2)
-    wc = st.slider("Brillo", int(vmin), int(vmax), int(center))
-    ww = st.slider("Contraste", 1, int(width), int(width))
-    thr = st.slider("Umbral", int(vmin), int(vmax), int(center))
+    slice_idx = sidebar.slider("Corte", 0, slice_max, slice_max // 2)
+    wc = sidebar.slider("Brillo", int(vmin), int(vmax), int(center))
+    ww = sidebar.slider("Contraste", 1, int(width), int(width))
+    thr = sidebar.slider("Umbral", int(vmin), int(vmax), int(center))
 
     if axis == 0: img = vol[slice_idx]
     elif axis == 1: img = vol[:, slice_idx]
@@ -92,9 +96,9 @@ if 'volume' in st.session_state:
     disp = ((imgw - mn) / ww * 255).astype(np.uint8)
 
     st.subheader("Vista 2D")
-    col_empty1, col_a, col_b, col_empty2 = st.columns([1, 3, 3, 1])
+    col_a, col_b = st.columns(2)
     with col_a:
-        st.image(disp, clamp=True, channels="GRAY", width=400)
+        st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
     mask = img > thr
     overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
     overlay[mask] = [255, 0, 0]
@@ -106,7 +110,7 @@ if 'volume' in st.session_state:
         ).astype(np.uint8)
     )
     with col_b:
-        st.image(composite, channels="RGB", width=400)
+        st.image(composite, channels="RGB", use_container_width=True)
     st.caption("Slice con threshold (máscara en color)")
 
     # --- 3D Preview y flujo pseudo-interactivo ---
