@@ -29,7 +29,7 @@ def volume_stats(vol):
     return vmin, vmax
 
 st.set_page_config(
-    page_title="Visor CT 2D+3D",
+    page_title="MirelesMed CT Viewer",
     page_icon="🩻",
     layout="wide",
 )
