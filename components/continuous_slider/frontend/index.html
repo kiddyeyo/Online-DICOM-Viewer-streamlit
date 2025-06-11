@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://unpkg.com/@streamlit/component-lib/dist/index.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 0; }
+    .container { width: 100%; padding: 0 4px; box-sizing: border-box; }
+    label { display: block; margin-bottom: 4px; }
+    input[type=range] { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <label id="lbl"></label>
+    <input type="range" id="rng" />
+  </div>
+  <script>
+    const lbl = document.getElementById("lbl");
+    const rng = document.getElementById("rng");
+
+    function render(event) {
+      const data = event.detail.args;
+      lbl.textContent = data.label || "";
+      rng.min = data.min_value;
+      rng.max = data.max_value;
+      rng.step = data.step || 1;
+      rng.value = data.value;
+      Streamlit.setComponentValue(Number(rng.value));
+      Streamlit.setFrameHeight(document.body.scrollHeight);
+    }
+
+    rng.addEventListener("input", () => {
+      Streamlit.setComponentValue(Number(rng.value));
+    });
+
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, render);
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(document.body.scrollHeight);
+  </script>
+</body>
+</html>

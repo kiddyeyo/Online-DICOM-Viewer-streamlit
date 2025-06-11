@@ -5,6 +5,7 @@ import pydicom, nibabel as nib
 from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 import trimesh
+from components.continuous_slider import continuous_slider
 
 @st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
@@ -81,10 +82,39 @@ if 'volume' in st.session_state:
     width = max(vmax - vmin, 1)
     slice_max = vol.shape[axis] - 1
 
-    slice_idx = sidebar.slider("Corte", 0, slice_max, slice_max // 2)
-    wc = sidebar.slider("Brillo", int(vmin), int(vmax), int(center))
-    ww = sidebar.slider("Contraste", 1, int(width), int(width))
-    thr = sidebar.slider("Umbral", int(vmin), int(vmax), int(center))
+    with sidebar:
+        slice_idx = continuous_slider(
+            label="Corte",
+            min_value=0,
+            max_value=slice_max,
+            value=int(st.session_state.get("slice_idx", slice_max // 2)),
+            step=1,
+            key="slice_idx",
+        )
+        wc = continuous_slider(
+            label="Brillo",
+            min_value=int(vmin),
+            max_value=int(vmax),
+            value=int(st.session_state.get("wc", int(center))),
+            step=1,
+            key="wc",
+        )
+        ww = continuous_slider(
+            label="Contraste",
+            min_value=1,
+            max_value=int(width),
+            value=int(st.session_state.get("ww", int(width))),
+            step=1,
+            key="ww",
+        )
+        thr = continuous_slider(
+            label="Umbral",
+            min_value=int(vmin),
+            max_value=int(vmax),
+            value=int(st.session_state.get("thr", int(center))),
+            step=1,
+            key="thr",
+        )
 
     if axis == 0: img = vol[slice_idx]
     elif axis == 1: img = vol[:, slice_idx]
