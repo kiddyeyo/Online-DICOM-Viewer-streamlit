@@ -37,7 +37,7 @@ Al iniciar la app podrás subir un ZIP con archivos DICOM o un archivo `.nii/.ni
 
 ## Preview
 
-![Preview](ignore/preview.png)
+![Preview](extras/preview.png)
 
 ---
 
