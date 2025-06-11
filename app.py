@@ -145,14 +145,10 @@ if 'volume' in st.session_state:
     # --- 3D Preview y flujo pseudo-interactivo ---
     with tab3d:
         st.header("Vista 3D y Edición STL")
-        col_ctrl, col_view = st.columns([1, 2])
+        col_view, col_ctrl = st.columns([2, 1])
         with col_ctrl:
             st.subheader("Controles 3D")
-            drag_mode = st.selectbox(
-                "Modo de interacción",
-                ["orbit", "turntable", "pan"],
-                format_func=lambda m: m.capitalize(),
-            )
+            drag_mode = "orbit"
             step = st.slider(
                 "Resolución mesh (step size)", 1, 5, 1,
                 help="Valores mayores generan mallas más ligeras"
