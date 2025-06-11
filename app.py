@@ -141,12 +141,22 @@ if 'volume' in st.session_state:
             if 'mesh' in st.session_state:
                 plane_axis = st.selectbox("Eje plano de corte", ["X","Y","Z"], key="plane_axis")
                 plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")
+                plane_dir = st.selectbox(
+                    "Dirección del corte",
+                    ["Desde mínimo", "Desde máximo"],
+                    key="plane_dir",
+                )
                 if st.button("Aplicar recorte plano"):
                     verts = st.session_state['verts']
                     faces = st.session_state['faces']
                     axis_num = {"X":0,"Y":1,"Z":2}[plane_axis]
-                    plane_val = verts[:,axis_num].min() + (np.ptp(verts[:,axis_num])) * plane_pos/100
-                    faces_keep = np.all(verts[faces][:,:,axis_num] >= plane_val, axis=1)
+                    axis_vals = verts[:, axis_num]
+                    if plane_dir == "Desde mínimo":
+                        plane_val = axis_vals.min() + np.ptp(axis_vals) * plane_pos / 100
+                        faces_keep = np.all(verts[faces][:, :, axis_num] >= plane_val, axis=1)
+                    else:
+                        plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100
+                        faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)
                     faces_clip = faces[faces_keep]
                     mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
                     st.session_state['clipped_mesh'] = mesh_clip
