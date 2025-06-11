@@ -28,12 +28,28 @@ def volume_stats(vol):
     vmin, vmax = np.percentile(vol, [1, 99]).astype(float)
     return vmin, vmax
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="Visor CT 2D+3D",
+    page_icon="🩻",
+    layout="wide",
+)
+
+# Hide Streamlit branding for a cleaner look
+st.markdown(
+    """
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # --- Utilidades para cargar datos ---
 
-st.title("Visor/Editor CT 2D+3D STL (Streamlit)")
+st.title("Visor/Editor CT 2D+3D STL")
 
 # --- Barra lateral: carga y controles ---
 with st.sidebar:
