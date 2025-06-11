@@ -26,16 +26,16 @@ Este proyecto ofrece un visor de volúmenes DICOM y NIfTI construido con **Strea
 
 También puedes usar Docker:
 
-```bash
-docker build -t dicom-viewer .
-docker run -p 8501:8501 dicom-viewer
-```
+   ```bash
+   docker build -t dicom-viewer .
+   docker run -p 8501:8501 dicom-viewer
+   ```
 
 O bien, con docker-compose:
 
-```bash
-docker-compose up
-```
+   ```bash
+   docker-compose up
+   ```
 
 ## Uso
 
