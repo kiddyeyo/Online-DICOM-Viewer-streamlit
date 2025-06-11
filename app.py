@@ -95,76 +95,80 @@ if 'volume' in st.session_state:
     imgw = np.clip(img, mn, mx)
     disp = ((imgw - mn) / ww * 255).astype(np.uint8)
 
-    st.subheader("Vista 2D")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
-    mask = img > thr
-    overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
-    overlay[mask] = [255, 0, 0]
-    composite = (
-        np.clip(
-            np.concatenate([disp[..., None]] * 3, axis=-1) * 0.7 + overlay * 0.3,
-            0,
-            255,
-        ).astype(np.uint8)
-    )
-    with col_b:
-        st.image(composite, channels="RGB", use_container_width=True)
-    st.caption("Slice con threshold (máscara en color)")
+    tab2d, tab3d = st.tabs(["Vista 2D", "Vista 3D y Edición STL"])
+
+    with tab2d:
+        st.subheader("Vista 2D")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
+        mask = img > thr
+        overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
+        overlay[mask] = [255, 0, 0]
+        composite = (
+            np.clip(
+                np.concatenate([disp[..., None]] * 3, axis=-1) * 0.7 + overlay * 0.3,
+                0,
+                255,
+            ).astype(np.uint8)
+        )
+        with col_b:
+            st.image(composite, channels="RGB", use_container_width=True)
+        st.caption("Slice con threshold (máscara en color)")
 
     # --- 3D Preview y flujo pseudo-interactivo ---
-    st.header("Vista 3D y Edición STL")
-    with st.expander("Opciones de 3D / STL"):
-        drag_mode = st.selectbox(
-            "Modo de interacción",
-            ["orbit", "turntable", "pan"],
-            format_func=lambda m: m.capitalize(),
-        )
-        col1, col2 = st.columns(2)
-        with col1:
-            step = st.slider(
-                "Resolución mesh (step size)", 1, 5, 1,
-                help="Valores mayores generan mallas más ligeras"
+    with tab3d:
+        st.header("Vista 3D y Edición STL")
+        with st.expander("Opciones de 3D / STL"):
+            drag_mode = st.selectbox(
+                "Modo de interacción",
+                ["orbit", "turntable", "pan"],
+                format_func=lambda m: m.capitalize(),
             )
-            if st.button("Generar/Actualizar STL"):
-                progress = st.progress(0)
-                with st.spinner("Calculando superficie..."):
-                    mask3d = (vol > thr).astype(np.uint8)
-                    progress.progress(25)
-                    verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
-                    progress.progress(75)
-                    mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-                    st.session_state['mesh'] = mesh
-                    st.session_state['verts'] = verts
-                    st.session_state['faces'] = faces
-                    st.session_state.pop('clipped_mesh', None)
-                    progress.progress(100)
-                st.success("STL generado.")
-        with col2:
-            if 'mesh' in st.session_state:
-                plane_axis = st.selectbox("Eje plano de corte", ["X","Y","Z"], key="plane_axis")
-                plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")
-                plane_dir = st.selectbox(
-                    "Dirección del corte",
-                    ["Desde mínimo", "Desde máximo"],
-                    key="plane_dir",
+            col1, col2 = st.columns(2)
+            with col1:
+                step = st.slider(
+                    "Resolución mesh (step size)", 1, 5, 1,
+                    help="Valores mayores generan mallas más ligeras"
                 )
-                if st.button("Aplicar recorte plano"):
-                    verts = st.session_state['verts']
-                    faces = st.session_state['faces']
-                    axis_num = {"X":0,"Y":1,"Z":2}[plane_axis]
-                    axis_vals = verts[:, axis_num]
-                    if plane_dir == "Desde mínimo":
-                        plane_val = axis_vals.min() + np.ptp(axis_vals) * plane_pos / 100
-                        faces_keep = np.all(verts[faces][:, :, axis_num] >= plane_val, axis=1)
-                    else:
-                        plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100
-                        faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)
-                    faces_clip = faces[faces_keep]
-                    mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
-                    st.session_state['clipped_mesh'] = mesh_clip
-                    st.success("Recorte aplicado.")
+                if st.button("Generar/Actualizar STL"):
+                    progress = st.progress(0)
+                    with st.spinner("Calculando superficie..."):
+                        mask3d = (vol > thr).astype(np.uint8)
+                        progress.progress(25)
+                        verts, faces, _, _ = marching_cubes(mask3d, level=0, step_size=step)
+                        progress.progress(75)
+                        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+                        st.session_state['mesh'] = mesh
+                        st.session_state['verts'] = verts
+                        st.session_state['faces'] = faces
+                        st.session_state.pop('clipped_mesh', None)
+                        progress.progress(100)
+                    st.success("STL generado.")
+            with col2:
+                if 'mesh' in st.session_state:
+                    plane_axis = st.selectbox("Eje plano de corte", ["X","Y","Z"], key="plane_axis")
+                    plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")
+                    plane_dir = st.selectbox(
+                        "Dirección del corte",
+                        ["Desde mínimo", "Desde máximo"],
+                        key="plane_dir",
+                    )
+                    if st.button("Aplicar recorte plano"):
+                        verts = st.session_state['verts']
+                        faces = st.session_state['faces']
+                        axis_num = {"X":0,"Y":1,"Z":2}[plane_axis]
+                        axis_vals = verts[:, axis_num]
+                        if plane_dir == "Desde mínimo":
+                            plane_val = axis_vals.min() + np.ptp(axis_vals) * plane_pos / 100
+                            faces_keep = np.all(verts[faces][:, :, axis_num] >= plane_val, axis=1)
+                        else:
+                            plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100
+                            faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)
+                        faces_clip = faces[faces_keep]
+                        mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
+                        st.session_state['clipped_mesh'] = mesh_clip
+                        st.success("Recorte aplicado.")
 
     # --- Render 3D preview ---
     preview_mesh = None
