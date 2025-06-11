@@ -14,3 +14,5 @@ herramientas básicas de clipping y exportación a STL.
   molestos al actualizar.
 - Se añadió un selector de "modo de interacción" para el visor 3D y un breve
   texto de ayuda con los controles básicos.
+- Ahora el deslizador de posición del plano muestra una vista previa del
+  corte antes de aplicarlo.

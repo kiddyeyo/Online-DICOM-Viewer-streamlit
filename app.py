@@ -146,7 +146,7 @@ if 'volume' in st.session_state:
                     st.success("STL generado.")
             with col2:
                 if 'mesh' in st.session_state:
-                    plane_axis = st.selectbox("Eje plano de corte", ["X","Y","Z"], key="plane_axis")
+                    plane_axis = st.selectbox("Eje plano de corte", ["X", "Y", "Z"], key="plane_axis")
                     plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")
                     plane_dir = st.selectbox(
                         "Dirección del corte",
@@ -188,6 +188,58 @@ if 'volume' in st.session_state:
                 i, j, k = faces_tri.T
                 mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
                 fig = go.Figure(data=[mesh3d])
+
+                # Preview plane position if controls exist
+                if 'plane_axis' in st.session_state and 'plane_pos' in st.session_state:
+                    plane_axis = st.session_state['plane_axis']
+                    plane_pos = st.session_state['plane_pos']
+                    axis_num = {"X": 0, "Y": 1, "Z": 2}[plane_axis]
+
+                    axis_vals = verts[:, axis_num]
+                    min_val, max_val = axis_vals.min(), axis_vals.max()
+                    plane_val = min_val + (max_val - min_val) * plane_pos / 100
+
+                    x_min, x_max = verts[:, 0].min(), verts[:, 0].max()
+                    y_min, y_max = verts[:, 1].min(), verts[:, 1].max()
+                    z_min, z_max = verts[:, 2].min(), verts[:, 2].max()
+
+                    if axis_num == 0:
+                        plane_verts = np.array([
+                            [plane_val, y_min, z_min],
+                            [plane_val, y_max, z_min],
+                            [plane_val, y_max, z_max],
+                            [plane_val, y_min, z_max],
+                        ])
+                    elif axis_num == 1:
+                        plane_verts = np.array([
+                            [x_min, plane_val, z_min],
+                            [x_max, plane_val, z_min],
+                            [x_max, plane_val, z_max],
+                            [x_min, plane_val, z_max],
+                        ])
+                    else:
+                        plane_verts = np.array([
+                            [x_min, y_min, plane_val],
+                            [x_max, y_min, plane_val],
+                            [x_max, y_max, plane_val],
+                            [x_min, y_max, plane_val],
+                        ])
+
+                    plane_faces = np.array([[0, 1, 2], [0, 2, 3]])
+                    plane_mesh = go.Mesh3d(
+                        x=plane_verts[:, 0],
+                        y=plane_verts[:, 1],
+                        z=plane_verts[:, 2],
+                        i=plane_faces[:, 0],
+                        j=plane_faces[:, 1],
+                        k=plane_faces[:, 2],
+                        color="red",
+                        opacity=0.4,
+                        name="Plane preview",
+                        showscale=False,
+                    )
+                    fig.add_trace(plane_mesh)
+
                 fig.update_layout(
                     scene_aspectmode="data",
                     scene_dragmode=drag_mode,
