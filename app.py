@@ -124,8 +124,8 @@ if 'volume' in st.session_state:
     )
 
     preset_ranges = {
-        "Hueso": (300, 3000),
-        "Tejido blando": (-500, -200),
+        "Hueso": (1300, 3000),
+        "Tejido blando": (500, 1300),
         "Tumor": (-250, -150),
     }
 
