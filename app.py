@@ -131,7 +131,7 @@ if 'volume' in st.session_state:
 
     if thr_option == "Personalizado":
         thr_min, thr_max = sidebar.slider(
-            "Rango de umbral", int(vmin), int(vmax), (int(vmin), int(vmax))
+            "Rango de umbral", -3000, 3000, (int(vmin), int(vmax))
         )
     else:
         thr_min, thr_max = preset_ranges[thr_option]
