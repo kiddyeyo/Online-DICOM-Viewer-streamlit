@@ -3,6 +3,7 @@ import numpy as np
 import os, zipfile, tempfile
 import pydicom, nibabel as nib
 from skimage.measure import marching_cubes
+from skimage.measure import label
 import plotly.graph_objects as go
 import trimesh
 
@@ -17,6 +18,16 @@ def bounding_box(mask: np.ndarray):
     y_min, y_max = np.where(y_any)[0][[0, -1]]
     z_min, z_max = np.where(z_any)[0][[0, -1]]
     return (slice(x_min, x_max + 1), slice(y_min, y_max + 1), slice(z_min, z_max + 1))
+
+def largest_connected_region(mask):
+    # Etiqueta todas las regiones conectadas
+    labeled = label(mask)
+    if labeled.max() == 0:
+        return mask
+    # Cuenta tamaño de cada región
+    region_sizes = np.bincount(labeled.flat)[1:]  # Omitir fondo (0)
+    largest_region = 1 + np.argmax(region_sizes)
+    return labeled == largest_region
 
 @st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
@@ -182,17 +193,18 @@ if 'volume' in st.session_state:
             if st.button("Generar/Actualizar STL"):
                 progress = st.progress(0)
                 with st.spinner("Calculando superficie..."):
-                    # Crea una máscara 3D para extraer la malla
+                    # --- Cambia aquí: ---
                     mask3d = (vol >= thr_min) & (vol <= thr_max)
+                    progress.progress(10)
+                    mask3d = largest_connected_region(mask3d)  # <-- Línea nueva clave
+                    progress.progress(20)
                     bbox = bounding_box(mask3d)
                     mask_crop = mask3d[bbox]
                     progress.progress(25)
-                    # Marching cubes genera vértices y caras de la superficie
                     verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)
                     offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])
                     verts += offset
                     progress.progress(75)
-                    # Guarda la malla en la sesión
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
