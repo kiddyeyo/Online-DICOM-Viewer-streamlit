@@ -116,7 +116,27 @@ if 'volume' in st.session_state:
     slice_idx = sidebar.slider("Corte", 0, slice_max, slice_max // 2)
     wc = sidebar.slider("Brillo", int(vmin), int(vmax), int(center))
     ww = sidebar.slider("Contraste", 1, int(width), int(width))
-    thr = sidebar.slider("Umbral", int(vmin), int(vmax), int(center))
+
+    # Selección de umbral mediante presets o personalizado
+    thr_option = sidebar.selectbox(
+        "Umbral",
+        ["Hueso", "Tejido blando", "Tumor", "Personalizado"],
+    )
+
+    preset_ranges = {
+        "Hueso": (300, 3000),
+        "Tejido blando": (-500, -200),
+        "Tumor": (-250, -150),
+    }
+
+    if thr_option == "Personalizado":
+        thr_min, thr_max = sidebar.slider(
+            "Rango de umbral", int(vmin), int(vmax), (int(vmin), int(vmax))
+        )
+    else:
+        thr_min, thr_max = preset_ranges[thr_option]
+
+    thr_min, thr_max = sorted([thr_min, thr_max])
 
     if axis == 0: img = vol[slice_idx]
     elif axis == 1: img = vol[:, slice_idx]
@@ -134,7 +154,7 @@ if 'volume' in st.session_state:
         with col_a:
             st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
         # Genera una máscara para superponer en rojo
-        mask = img > thr
+        mask = (img >= thr_min) & (img <= thr_max)
         overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
         overlay[mask] = [255, 0, 0]
         composite = (
@@ -146,7 +166,7 @@ if 'volume' in st.session_state:
         )
         with col_b:
             st.image(composite, channels="RGB", use_container_width=True)
-        st.caption("Slice con threshold (máscara en color)")
+        st.caption("Slice con umbral (máscara en color)")
 
     # --- Vista previa 3D y flujo pseudo-interactivo ---
     with tab3d:
@@ -163,7 +183,7 @@ if 'volume' in st.session_state:
                 progress = st.progress(0)
                 with st.spinner("Calculando superficie..."):
                     # Crea una máscara 3D para extraer la malla
-                    mask3d = vol > thr
+                    mask3d = (vol >= thr_min) & (vol <= thr_max)
                     bbox = bounding_box(mask3d)
                     mask_crop = mask3d[bbox]
                     progress.progress(25)
