@@ -10,7 +10,13 @@ from scipy.ndimage import binary_closing, binary_opening
 from skimage.morphology import remove_small_objects
 
 def bounding_box(mask: np.ndarray):
-    """Devuelve slices que cubren la región verdadera de la máscara."""
+    """Obtiene el recorte mínimo que contiene a la máscara.
+
+    Calcula para cada eje la primera y última posición donde la máscara
+    presenta valores verdaderos y devuelve slices que permiten recortar
+    el volumen original a esa región. Esto acelera operaciones de
+    marching cubes y reduce el uso de memoria.
+    """
     if not np.any(mask):
         return (slice(0, mask.shape[0]), slice(0, mask.shape[1]), slice(0, mask.shape[2]))
     x_any = np.any(mask, axis=(1, 2))
@@ -22,18 +28,24 @@ def bounding_box(mask: np.ndarray):
     return (slice(x_min, x_max + 1), slice(y_min, y_max + 1), slice(z_min, z_max + 1))
 
 def largest_connected_region(mask):
-    # Etiqueta todas las regiones conectadas
+    """Conserva únicamente la región conectada de mayor tamaño."""
+    # Etiquetado de regiones vecinas
     labeled = label(mask)
     if labeled.max() == 0:
         return mask
-    # Cuenta tamaño de cada región
+    # Calcular el tamaño (número de voxeles) de cada región
     region_sizes = np.bincount(labeled.flat)[1:]  # Omitir fondo (0)
     largest_region = 1 + np.argmax(region_sizes)
     return labeled == largest_region
 
 @st.cache_data(show_spinner=False)
 def load_dicom_series(zip_file):
-    """Carga un ZIP con una serie DICOM y genera el volumen 3D."""
+    """Lee una carpeta comprimida con archivos DICOM y construye el volumen.
+
+    Los archivos se ordenan según `ImagePositionPatient` para preservar la
+    geometría original del estudio. El resultado es un arreglo 3D con la
+    intensidad de cada voxel.
+    """
     temp_dir = tempfile.mkdtemp()
     with zipfile.ZipFile(zip_file, "r") as zip_ref:
         zip_ref.extractall(temp_dir)
@@ -45,14 +57,14 @@ def load_dicom_series(zip_file):
 
 @st.cache_data(show_spinner=False)
 def load_nifti(nifti_file):
-    """Carga un archivo NIfTI y devuelve el volumen."""
+    """Abre un archivo NIfTI y retorna su matriz volumétrica."""
     img = nib.load(nifti_file)
     vol = img.get_fdata()
     return vol
 
 @st.cache_data(show_spinner=False)
 def volume_stats(vol):
-    """Obtiene el rango de intensidades útil para visualización."""
+    """Calcula percentiles para ajustar la ventana de visualización."""
     vmin, vmax = np.percentile(vol, [1, 99]).astype(float)
     return vmin, vmax
 
@@ -196,23 +208,23 @@ if 'volume' in st.session_state:
             if st.button("Generar/Actualizar STL"):
                 progress = st.progress(0)
                 with st.spinner("Calculando superficie..."):
-                    # --- Cambia aquí: ---
-                    mask3d = (vol >= thr_min) & (vol <= thr_max)
-                    mask3d = binary_closing(mask3d, iterations=2)
-                    mask3d = binary_opening(mask3d, iterations=1)
-                    mask3d = remove_small_objects(mask3d, min_size=5000)
+                    # --- Post-procesamiento y extracción de la malla ---
+                    mask3d = (vol >= thr_min) & (vol <= thr_max)  # Umbral inicial
+                    mask3d = binary_closing(mask3d, iterations=2)  # Cerrar huecos
+                    mask3d = binary_opening(mask3d, iterations=1)  # Suavizar bordes
+                    mask3d = remove_small_objects(mask3d, min_size=5000)  # Eliminar ruido
                     progress.progress(10)
-                    mask3d = largest_connected_region(mask3d)
+                    mask3d = largest_connected_region(mask3d)  # Mantener la región principal
                     progress.progress(20)
-                    bbox = bounding_box(mask3d)
+                    bbox = bounding_box(mask3d)  # Recorta a la región ocupada
                     mask_crop = mask3d[bbox]
                     progress.progress(25)
-                    verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)
-                    offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])
+                    verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)  # Extracción de superficie
+                    offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])  # Recolocar vértices
                     verts += offset
                     progress.progress(75)
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-                    mesh = mesh.smoothed()
+                    mesh = mesh.smoothed()  # Suavizado de superficie
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
                     st.session_state['faces'] = faces
@@ -221,44 +233,44 @@ if 'volume' in st.session_state:
                 st.success("STL generado.")
             if 'mesh' in st.session_state:
                 plane_axis = st.selectbox("Eje plano de corte", ["X", "Y", "Z"], key="plane_axis")
-                plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")
+                plane_pos = st.slider("Posición del plano (%)", 0, 100, 50, key="plane_pos")  # Porcentaje de la extensión
                 plane_dir = st.selectbox(
                     "Dirección del corte",
                     ["Desde mínimo", "Desde máximo"],
                     key="plane_dir",
-                )
+                )  # Selecciona desde qué lado se elimina la malla
                 if st.button("Aplicar recorte plano"):
-                    verts = st.session_state['verts']
-                    faces = st.session_state['faces']
-                    axis_num = {"X": 0, "Y": 1, "Z": 2}[plane_axis]
-                    axis_vals = verts[:, axis_num]
+                    verts = st.session_state['verts']  # Vértices originales
+                    faces = st.session_state['faces']  # Caras originales
+                    axis_num = {"X": 0, "Y": 1, "Z": 2}[plane_axis]  # Eje seleccionado
+                    axis_vals = verts[:, axis_num]  # Coordenadas de cada vértice en ese eje
                     if plane_dir == "Desde mínimo":
-                        plane_val = axis_vals.min() + np.ptp(axis_vals) * plane_pos / 100
-                        faces_keep = np.all(verts[faces][:, :, axis_num] >= plane_val, axis=1)
+                        plane_val = axis_vals.min() + np.ptp(axis_vals) * plane_pos / 100  # Umbral absoluto
+                        faces_keep = np.all(verts[faces][:, :, axis_num] >= plane_val, axis=1)  # Caras que se conservan
                     else:
-                        plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100
-                        faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)
+                        plane_val = axis_vals.max() - np.ptp(axis_vals) * plane_pos / 100  # Umbral absoluto
+                        faces_keep = np.all(verts[faces][:, :, axis_num] <= plane_val, axis=1)  # Caras que se conservan
                     # Genera una nueva malla sin las caras cortadas
                     faces_clip = faces[faces_keep]
-                    mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)
+                    mesh_clip = trimesh.Trimesh(vertices=verts, faces=faces_clip)  # Malla recortada
                     st.session_state['clipped_mesh'] = mesh_clip
                     st.success("Recorte aplicado.")
         with col_view:
 
             # --- Renderizado de la vista 3D ---
-            preview_mesh = None
+            preview_mesh = None  # Malla que se mostrará en pantalla
             if 'clipped_mesh' in st.session_state:
                 preview_mesh = st.session_state['clipped_mesh']
             elif 'mesh' in st.session_state:
                 preview_mesh = st.session_state['mesh']
 
             if preview_mesh:
-                verts = preview_mesh.vertices
-                faces = preview_mesh.faces
+                verts = preview_mesh.vertices  # Numpy array (n,3)
+                faces = preview_mesh.faces    # Índices de triángulos
                 if len(verts) > 0 and len(faces) > 0:
-                    x, y, z = verts.T
+                    x, y, z = verts.T  # Coordenadas separadas
                     if faces.ndim > 2:
-                        faces_tri = faces.reshape(-1, 3)
+                        faces_tri = faces.reshape(-1, 3)  # Convierte quad a triángulos
                     else:
                         faces_tri = faces
                     i, j, k = faces_tri.T
@@ -329,7 +341,7 @@ if 'volume' in st.session_state:
                     scene_aspectmode="data",
                     scene_dragmode=drag_mode,
                     margin=dict(l=0, r=0, b=0, t=0),
-                    uirevision="mesh"
+                    uirevision="mesh"  # Evita reiniciar la vista al interactuar
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 st.caption(
@@ -341,9 +353,9 @@ if 'volume' in st.session_state:
             # --- Exportación STL ---
             if st.button("Exportar STL"):
                 if preview_mesh is not None and len(preview_mesh.vertices) > 0:
-                    export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")
+                    export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")  # Ruta temporal
                     preview_mesh.export(export_path)
-                    with open(export_path, "rb") as f:
+                    with open(export_path, "rb") as f:  # Enviar archivo a usuario
                         st.download_button(
                             "Descargar STL",
                             f,
