@@ -133,13 +133,13 @@ if 'volume' in st.session_state:
     # Selección de umbral mediante presets o personalizado
     thr_option = sidebar.selectbox(
         "Umbral",
-        ["Hueso", "Tejido blando", "Tumor", "Personalizado"],
+        ["Hueso", "Pulmones", "Tejido blando", "Tumor", "Personalizado"],
     )
 
     preset_ranges = {
         "Hueso": (300, 3000),
         "Pulmones": (-899, -200),
-        "Tejido blando": (-199, 0),
+        "Tejido blando": (-199, 100),
         "Tumor": (-250, -150),
     }
 
