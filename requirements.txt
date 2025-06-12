@@ -5,3 +5,4 @@ scikit-image
 plotly
 streamlit
 trimesh
+scipy

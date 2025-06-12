@@ -6,6 +6,8 @@ from skimage.measure import marching_cubes
 from skimage.measure import label
 import plotly.graph_objects as go
 import trimesh
+from scipy.ndimage import binary_closing, binary_opening
+from skimage.morphology import remove_small_objects
 
 def bounding_box(mask: np.ndarray):
     """Devuelve slices que cubren la región verdadera de la máscara."""
@@ -195,8 +197,11 @@ if 'volume' in st.session_state:
                 with st.spinner("Calculando superficie..."):
                     # --- Cambia aquí: ---
                     mask3d = (vol >= thr_min) & (vol <= thr_max)
+                    mask3d = binary_closing(mask3d, iterations=2)
+                    mask3d = binary_opening(mask3d, iterations=1)
+                    mask3d = remove_small_objects(mask3d, min_size=5000)
                     progress.progress(10)
-                    mask3d = largest_connected_region(mask3d)  # <-- Línea nueva clave
+                    mask3d = largest_connected_region(mask3d)
                     progress.progress(20)
                     bbox = bounding_box(mask3d)
                     mask_crop = mask3d[bbox]
@@ -206,6 +211,7 @@ if 'volume' in st.session_state:
                     verts += offset
                     progress.progress(75)
                     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+                    mesh = mesh.smoothed()
                     st.session_state['mesh'] = mesh
                     st.session_state['verts'] = verts
                     st.session_state['faces'] = faces
@@ -255,7 +261,17 @@ if 'volume' in st.session_state:
                     else:
                         faces_tri = faces
                     i, j, k = faces_tri.T
-                    mesh3d = go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgray", opacity=1.0)
+                    mesh3d = go.Mesh3d(
+                        x=x,
+                        y=y,
+                        z=z,
+                        i=i,
+                        j=j,
+                        k=k,
+                        color="lightblue",
+                        opacity=0.8,
+                        flatshading=True,
+                    )
                     fig = go.Figure(data=[mesh3d])
 
                 # Vista previa de la posición del plano si existen controles
@@ -324,10 +340,18 @@ if 'volume' in st.session_state:
 
             # --- Exportación STL ---
             if st.button("Exportar STL"):
-                export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")
-                preview_mesh.export(export_path)
-                with open(export_path, "rb") as f:
-                    st.download_button("Descargar STL", f, file_name="mesh_export.stl", mime="application/sla")
+                if preview_mesh is not None and len(preview_mesh.vertices) > 0:
+                    export_path = os.path.join(tempfile.gettempdir(), "mesh_export.stl")
+                    preview_mesh.export(export_path)
+                    with open(export_path, "rb") as f:
+                        st.download_button(
+                            "Descargar STL",
+                            f,
+                            file_name="mesh_export.stl",
+                            mime="application/sla",
+                        )
+                else:
+                    st.error("La malla está vacía.")
 
 else:
     st.info("Carga un volumen DICOM (.zip de .dcm) o NIfTI (.nii/.nii.gz) para empezar.")
