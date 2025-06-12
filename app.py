@@ -137,8 +137,9 @@ if 'volume' in st.session_state:
     )
 
     preset_ranges = {
-        "Hueso": (1300, 3000),
-        "Tejido blando": (500, 1300),
+        "Hueso": (300, 3000),
+        "Pulmones": (-899, -200),
+        "Tejido blando": (-199, 0),
         "Tumor": (-250, -150),
     }
 
@@ -268,9 +269,8 @@ if 'volume' in st.session_state:
                         i=i,
                         j=j,
                         k=k,
-                        color="lightblue",
-                        opacity=0.8,
-                        flatshading=True,
+                        color="white",
+                        opacity=1,
                     )
                     fig = go.Figure(data=[mesh3d])
 
