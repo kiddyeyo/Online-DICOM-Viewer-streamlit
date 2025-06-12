@@ -1,13 +1,32 @@
 import streamlit as st
-import numpy as np
 import os, zipfile, tempfile
 import pydicom, nibabel as nib
-from skimage.measure import marching_cubes
-from skimage.measure import label
 import plotly.graph_objects as go
 import trimesh
-from scipy.ndimage import binary_closing, binary_opening
-from skimage.morphology import remove_small_objects
+
+try:
+    import cupy as cp
+    import cupyx.scipy.ndimage as ndimage
+    from cucim.skimage.measure import marching_cubes
+    from cupyx.scipy.ndimage import label
+    from cucim.skimage.morphology import remove_small_objects
+    GPU_ENABLED = True
+    np = cp  # alias for transparent use
+except Exception:
+    import numpy as np
+    import scipy.ndimage as ndimage
+    from skimage.measure import marching_cubes, label
+    from skimage.morphology import remove_small_objects
+    GPU_ENABLED = False
+    cp = None
+
+binary_closing = ndimage.binary_closing
+binary_opening = ndimage.binary_opening
+
+def to_cpu(arr):
+    if GPU_ENABLED:
+        return cp.asnumpy(arr)
+    return arr
 
 def bounding_box(mask: np.ndarray):
     """Devuelve slices que cubren la región verdadera de la máscara."""
@@ -41,6 +60,8 @@ def load_dicom_series(zip_file):
     slices = [pydicom.dcmread(os.path.join(temp_dir, f)) for f in files]
     slices.sort(key=lambda s: float(getattr(s, "ImagePositionPatient", [0, 0, 0])[2]))
     vol = np.stack([s.pixel_array for s in slices])
+    if GPU_ENABLED:
+        vol = cp.asarray(vol)
     return vol
 
 @st.cache_data(show_spinner=False)
@@ -48,6 +69,8 @@ def load_nifti(nifti_file):
     """Carga un archivo NIfTI y devuelve el volumen."""
     img = nib.load(nifti_file)
     vol = img.get_fdata()
+    if GPU_ENABLED:
+        vol = cp.asarray(vol)
     return vol
 
 @st.cache_data(show_spinner=False)
@@ -166,7 +189,7 @@ if 'volume' in st.session_state:
         st.subheader("Vista 2D")
         col_a, col_b = st.columns(2)
         with col_a:
-            st.image(disp, clamp=True, channels="GRAY", use_container_width=True)
+            st.image(to_cpu(disp), clamp=True, channels="GRAY", use_container_width=True)
         # Genera una máscara para superponer en rojo
         mask = (img >= thr_min) & (img <= thr_max)
         overlay = np.zeros((*img.shape, 3), dtype=np.uint8)
@@ -179,7 +202,7 @@ if 'volume' in st.session_state:
             ).astype(np.uint8)
         )
         with col_b:
-            st.image(composite, channels="RGB", use_container_width=True)
+            st.image(to_cpu(composite), channels="RGB", use_container_width=True)
         st.caption("Slice con umbral (máscara en color)")
 
     # --- Vista previa 3D y flujo pseudo-interactivo ---
@@ -207,15 +230,21 @@ if 'volume' in st.session_state:
                     bbox = bounding_box(mask3d)
                     mask_crop = mask3d[bbox]
                     progress.progress(25)
-                    verts, faces, _, _ = marching_cubes(mask_crop.astype(np.uint8), level=0, step_size=step)
-                    offset = np.array([bbox[0].start, bbox[1].start, bbox[2].start])
+                    verts, faces, _, _ = marching_cubes(
+                        mask_crop.astype(np.uint8), level=0, step_size=step
+                    )
+                    offset = np.array(
+                        [bbox[0].start, bbox[1].start, bbox[2].start], dtype=verts.dtype
+                    )
                     verts += offset
                     progress.progress(75)
-                    mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+                    verts_cpu = to_cpu(verts)
+                    faces_cpu = to_cpu(faces)
+                    mesh = trimesh.Trimesh(vertices=verts_cpu, faces=faces_cpu)
                     mesh = mesh.smoothed()
                     st.session_state['mesh'] = mesh
-                    st.session_state['verts'] = verts
-                    st.session_state['faces'] = faces
+                    st.session_state['verts'] = verts_cpu
+                    st.session_state['faces'] = faces_cpu
                     st.session_state.pop('clipped_mesh', None)
                     progress.progress(100)
                 st.success("STL generado.")

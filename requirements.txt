@@ -6,3 +6,5 @@ plotly
 streamlit
 trimesh
 scipy
+cupy
+cucim

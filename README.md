@@ -19,6 +19,9 @@ Este proyecto ofrece un visor de volúmenes DICOM y NIfTI construido con **Strea
 pip install -r requirements.txt
 ```
 
+Si cuentas con una GPU compatible, las bibliotecas `cupy` y `cucim` se
+aprovecharán automáticamente para acelerar el procesamiento.
+
 ### Ejecuta la aplicación
 
 ```bash
